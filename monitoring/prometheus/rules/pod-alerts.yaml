@@ -1,3 +1,9 @@
+# ===================================================================
+# Pod 资源告警规则
+# 注意：告警抑制规则（inhibit_rules）配置在
+# monitoring/alertmanager/configmap.yaml 中
+# ===================================================================
+
 # Prometheus Alert Rules - Pod Resources
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule

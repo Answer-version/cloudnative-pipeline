@@ -9,5 +9,5 @@ scrape_configs:
 
   - job_name: 'app'
     static_configs:
-      - targets: ['app:8080']
+      - targets: ['app:9090']
     metrics_path: '/metrics'

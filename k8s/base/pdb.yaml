@@ -13,7 +13,7 @@ metadata:
   labels:
     app: cloudnative-pipeline
 spec:
-  minAvailable: 2
+  minAvailable: 50%
   selector:
     matchLabels:
       app: cloudnative-pipeline

@@ -22,6 +22,12 @@ metadata:
     # 部署版本（更新时自动更新）
 spec:
   # ----------------------------------------------------------------
+  # 镜像拉取密钥
+  # ----------------------------------------------------------------
+  imagePullSecrets:
+    - name: registry-secret
+
+  # ----------------------------------------------------------------
   # 副本数配置
   # ----------------------------------------------------------------
   replicas: 3
@@ -269,9 +275,8 @@ spec:
             - sh
             - -c
             - |
-              echo "Waiting for PostgreSQL..."
-              until nc -z postgres-headless.pipeline.svc.cluster.local 5432; do
-                echo "PostgreSQL is not ready, waiting..."
+              until wget -q -O /dev/null http://postgres-headless.pipeline.svc.cluster.local:5432 2>/dev/null || exit 0; do
+                echo "Waiting for PostgreSQL..."
                 sleep 2
               done
               echo "PostgreSQL is ready!"

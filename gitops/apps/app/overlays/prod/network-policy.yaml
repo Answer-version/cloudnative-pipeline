@@ -21,11 +21,7 @@ spec:
         - protocol: TCP
           port: 8080
   egress:
-    - to:
-        - podSelector: {}
-      ports:
-        - protocol: TCP
-          port: 8080
+    # 只允许集群内部 DNS 和必要服务
     - to:
         - namespaceSelector: {}
       ports:
@@ -33,3 +29,16 @@ spec:
           port: 53
         - protocol: UDP
           port: 53
+    # 允许访问依赖的集群内部服务
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379

@@ -20,10 +20,14 @@ spec:
   project: cloudnative-project
   
   source:
-    # TODO: 替换为你的 GitOps 仓库地址
-    # 例如: https://github.com/your-org/gitops.git
+    # ===================================================================
+    # TODO: 重要配置 - 部署前必须修改
+    # 1. 将 repoURL 替换为实际的 GitOps 仓库地址
+    # 2. 确保 targetRevision 与实际分支一致 (master)
+    # 3. 替换 kustomize.images 中的镜像地址
+    # ===================================================================
     repoURL: https://github.com/your-org/gitops.git
-    targetRevision: main
+    targetRevision: master
     path: gitops/apps/app/overlays/prod
     kustomize:
       images:
