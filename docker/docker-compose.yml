@@ -138,7 +138,7 @@ services:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
     volumes:
-      - minio-data=/data
+      - ./minio-data:/data
     networks:
       - pipeline-network
     restart: unless-stopped

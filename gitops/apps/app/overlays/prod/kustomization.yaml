@@ -234,7 +234,6 @@ replicas:
 
 patchesStrategicMerge:
   - pod-disruption-budget.yaml
-  - network-policy.yaml
 
 resources:
   - namespace.yaml

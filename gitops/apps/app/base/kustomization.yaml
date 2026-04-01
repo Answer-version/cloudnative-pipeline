@@ -18,10 +18,6 @@ namespace: default
 resources:
   - deployment.yaml
   - service.yaml
-  - serviceaccount.yaml
-  - configmap.yaml
-  - hpa.yaml
-  - pdb.yaml
 
 images:
   - name: ghcr.io/your-org/your-repo

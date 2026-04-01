@@ -21,8 +21,8 @@ spec:
       description: Target namespace
     - name: overlay-path
       type: string
-      default: gitops/apps/app/overlays/dev
-      description: Kustomize overlay path
+      default: "."
+      description: Kustomize overlay path relative to workspace root
     - name: kustomize-version
       type: string
       default: v5.4.1

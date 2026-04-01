@@ -15,11 +15,12 @@ commonLabels:
 
 namespace: dev
 
-bases:
+resources:
   - ../../base
 
 patches:
-  - patch: |
+  - target: {name: cloudnative-app}
+    patch: |
       apiVersion: apps/v1
       kind: Deployment
       metadata:
@@ -70,7 +71,8 @@ patches:
                   initialDelaySeconds: 15
                   periodSeconds: 20
 
-  - patch: |
+  - target: {name: cloudnative-app}
+    patch: |
       apiVersion: v1
       kind: Service
       metadata:
@@ -83,7 +85,8 @@ patches:
             protocol: TCP
             name: http
 
-  - patch: |
+  - target: {name: cloudnative-app}
+    patch: |
       apiVersion: autoscaling/v2
       kind: HorizontalPodAutoscaler
       metadata:

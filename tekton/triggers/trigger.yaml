@@ -29,9 +29,6 @@ spec:
             - name: filter
               value: |
                 body.ref.startsWith("refs/heads/")
-        - ref:
-            apiVersion: triggers.tekton.dev/v1beta1
-            name: gitlab-interceptor
       bindings:
         - ref: git-push-binding
       template:

@@ -27,6 +27,8 @@ spec:
       default: spdx-json
       description: SBOM format (spdx-json, cyclonedx-json)
   workspaces:
+    - name: source
+      description: Source code workspace
     - name: push-config
       description: Docker registry credentials
       mountPath: /kaniko/.docker
@@ -52,10 +54,9 @@ spec:
         # This step ensures it exists in the target registry
         
         /kaniko/executor \
-          --context $(workspaces.push-config.path) \
-          --dockerfile /workspace/Dockerfile \
-          --destination "${IMAGE}" \
-          --no-push
+          --context $(workspaces.source.path) \
+          --dockerfile $(params.dockerfile) \
+          --destination "${IMAGE}"
 
         echo "Image push verification complete"
 

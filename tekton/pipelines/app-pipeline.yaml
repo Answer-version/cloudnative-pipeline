@@ -117,7 +117,8 @@ spec:
           value: $(tasks.build-image.results.image-digest)
       workspaces:
         - name: push-config
-          workspace: docker-hub-credentials
+          secret:
+            secretName: docker-credentials
       retries: 2
       timeout: 15m
 
@@ -150,16 +151,7 @@ spec:
       description: Go module cache
     - name: kaniko-cache
       description: Kaniko build cache
-    - name: docker-hub-credentials
-      description: Docker registry credentials
     - name: kubeconfig
       description: Kubernetes kubeconfig file
 
-  finally:
-    - name: cleanup
-      taskRef:
-        name: cleanup-workspace
-        kind: Task
-      workspaces:
-        - name: shared-workspace
-          workspace: shared-workspace
+
