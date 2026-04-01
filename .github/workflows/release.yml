@@ -1,0 +1,126 @@
+name: Build Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Package Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display git tags
+        run: |
+          Write-Host "Tag: ${{ github.ref }}"
+          Write-Host "Tag name: ${{ github.ref_name }}"
+
+      - name: Create release package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $tag = $env:GITHUB_REF_NAME.TrimStart("v")
+          Write-Host "Building release for version: $tag"
+
+          # Create staging directory
+          $staging = "release-temp"
+          if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+          New-Item -ItemType Directory -Path $staging | Out-Null
+
+          # Files to include
+          $files = @(
+            "START-WINDOWS.bat",
+            "docker-compose.yml",
+            ".env.example",
+            "README.md",
+            "QUICKSTART.md",
+            "TROUBLESHOOTING.md"
+          )
+
+          foreach ($file in $files) {
+            if (Test-Path $file) {
+              Copy-Item -Path $file -Destination "$staging\$file" -Force
+              Write-Host "  Added: $file"
+            } else {
+              Write-Warning "  Skipped (not found): $file"
+            }
+          }
+
+          # Copy scripts/
+          $scriptsDst = "$staging\scripts"
+          New-Item -ItemType Directory -Path $scriptsDst -Force | Out-Null
+          if (Test-Path "scripts") {
+            Get-ChildItem -Path "scripts" -Filter "*.ps1" -File | ForEach-Object {
+              Copy-Item -Path $_.FullName -Destination $scriptsDst -Force
+              Write-Host "  Added: scripts\$($_.Name)"
+            }
+          }
+
+          # Generate RELEASE_NOTES.md from template
+          if (Test-Path "RELEASE_NOTES_TEMPLATE.md") {
+            $content = Get-Content "RELEASE_NOTES_TEMPLATE.md" -Raw
+            $content = $content -replace '{{VERSION}}', $tag
+            $content = $content -replace '{{DATE}}', (Get-Date -Format "yyyy-MM-dd")
+            $content = $content -replace '{{RELEASE_DATE}}', (Get-Date -Format "yyyy年MM月dd日")
+            Set-Content -Path "$staging\RELEASE_NOTES.md" -Value $content -Encoding UTF8
+            Write-Host "  Generated: RELEASE_NOTES.md"
+          }
+
+          # Create output directory
+          $outDir = "release"
+          if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $outDir | Out-Null
+
+          # Zip the package
+          $zipName = "cloudnative-pipeline-$tag-windows.zip"
+          Compress-Archive -Path "$staging\*" -DestinationPath "$outDir\$zipName" -CompressionLevel Optimal
+          Write-Host "Created: $outDir\$zipName"
+
+          $zipSize = (Get-Item "$outDir\$zipName").Length / 1MB
+          Write-Host "Package size: $([math]::Round($zipSize, 2)) MB"
+
+          # Cleanup
+          Remove-Item $staging -Recurse -Force
+
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $outDir = "release"
+
+          $checksumFile = "$outDir\SHA256SUMS.txt"
+          $entries = @()
+
+          Get-ChildItem -Path $outDir -Filter "*.zip" | ForEach-Object {
+            $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash
+            $entries += "$hash  $($_.Name)"
+            Write-Host "SHA256 ($($_.Name)) = $hash"
+          }
+
+          $entries | Set-Content -Path $checksumFile -Encoding UTF8
+          Write-Host "Created: SHA256SUMS.txt"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: release/
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
