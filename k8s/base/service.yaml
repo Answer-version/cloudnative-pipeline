@@ -1,0 +1,203 @@
+# ===================================================================
+# CloudNative Pipeline - Service 配置
+# ===================================================================
+# ClusterIP: 集群内部访问
+# 部署命令: kubectl apply -f k8s/base/service.yaml
+# ===================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudnative-pipeline
+  namespace: pipeline
+  labels:
+    app: cloudnative-pipeline
+    app.kubernetes.io/name: cloudnative-pipeline
+    app.kubernetes.io/component: backend
+  annotations:
+    description: "CloudNative Pipeline 主服务"
+spec:
+  # ----------------------------------------------------------------
+  # 服务类型
+  # ----------------------------------------------------------------
+  type: ClusterIP
+
+  # ----------------------------------------------------------------
+  # 端口配置
+  # ----------------------------------------------------------------
+  ports:
+    # HTTP 端口（主应用）
+    - name: http
+      port: 80              # Service 端口
+      targetPort: 8080      # 容器端口
+      protocol: TCP
+
+    # Metrics 端口（Prometheus 采集）
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+
+  # ----------------------------------------------------------------
+  # 选择器
+  # ----------------------------------------------------------------
+  selector:
+    app: cloudnative-pipeline
+
+---
+
+# ===================================================================
+# Headless Service（用于 StatefulSet 或有状态服务）
+# ===================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudnative-pipeline-headless
+  namespace: pipeline
+  labels:
+    app: cloudnative-pipeline
+    app.kubernetes.io/name: cloudnative-pipeline
+  annotations:
+    description: "CloudNative Pipeline Headless Service（用于 Pod DNS 固定）"
+spec:
+  # Headless Service：不做负载均衡，直接返回 Pod IP
+  clusterIP: None
+
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+
+  selector:
+    app: cloudnative-pipeline
+
+---
+
+# ===================================================================
+# Postgres Service
+# ===================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: pipeline
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgresql
+  annotations:
+    description: "PostgreSQL 数据库服务"
+spec:
+  type: ClusterIP
+  ports:
+    - name: tcp
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    app: postgres
+
+---
+
+# ===================================================================
+# Postgres Headless Service（用于 StatefulSet）
+# ===================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: pipeline
+  labels:
+    app: postgres
+  annotations:
+    service.kubernetes.io/headless: ""
+spec:
+  clusterIP: None
+  ports:
+    - name: tcp
+      port: 5432
+      targetPort: 5432
+  selector:
+    app: postgres
+
+---
+
+# ===================================================================
+# Redis Service
+# ===================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: pipeline
+  labels:
+    app: redis
+    app.kubernetes.io/name: redis
+  annotations:
+    description: "Redis 缓存服务"
+spec:
+  type: ClusterIP
+  ports:
+    - name: tcp
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+  selector:
+    app: redis
+
+---
+
+# ===================================================================
+# Redis Headless Service
+# ===================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: pipeline
+  labels:
+    app: redis
+  annotations:
+    service.kubernetes.io/headless: ""
+spec:
+  clusterIP: None
+  ports:
+    - name: tcp
+      port: 6379
+      targetPort: 6379
+  selector:
+    app: redis
+
+---
+
+# ===================================================================
+# MinIO Service
+# ===================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: pipeline
+  labels:
+    app: minio
+    app.kubernetes.io/name: minio
+  annotations:
+    description: "MinIO S3 兼容对象存储服务"
+spec:
+  type: ClusterIP
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+    - name: console
+      port: 9001
+      targetPort: 9001
+      protocol: TCP
+  selector:
+    app: minio

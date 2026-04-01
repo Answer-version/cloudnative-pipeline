@@ -1,0 +1,261 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: app-prod
+  annotations:
+    environment: production
+    team: platform-engineering
+    description: Production environment configuration
+    compliance: pci-dss
+    backup: enabled
+    monitoring: datadog
+
+commonLabels:
+  app: cloudnative-app
+  environment: production
+  managed-by: kustomize
+  compliance: pci-dss
+
+namespace: production
+
+bases:
+  - ../../base
+
+patches:
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cloudnative-app
+        labels:
+          app.kubernetes.io/version: production
+      spec:
+        replicas: 5
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 2
+            maxUnavailable: 1
+        template:
+          metadata:
+            labels:
+              app: cloudnative-app
+              environment: production
+          spec:
+            terminationGracePeriodSeconds: 60
+            containers:
+              - name: app
+                env:
+                  - name: ENV
+                    value: production
+                  - name: LOG_LEVEL
+                    value: info
+                  - name: DATABASE_HOST
+                    value: prod-db-primary.example.com
+                  - name: DATABASE_REPLICA_HOST
+                    value: prod-db-replica.example.com
+                  - name: REDIS_HOST
+                    value: prod-redis.example.com
+                  - name: REDIS_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: redis-credentials
+                        key: password
+                  - name: API_TIMEOUT
+                    value: 10s
+                resources:
+                  requests:
+                    cpu: 500m
+                    memory: 512Mi
+                  limits:
+                    cpu: 2000m
+                    memory: 2Gi
+                ports:
+                  - name: http
+                    containerPort: 8080
+                    protocol: TCP
+                readinessProbe:
+                  httpGet:
+                    path: /healthz/ready
+                    port: 8080
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  successThreshold: 1
+                  failureThreshold: 3
+                livenessProbe:
+                  httpGet:
+                    path: /healthz/live
+                    port: 8080
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                  successThreshold: 1
+                  failureThreshold: 5
+                lifecycle:
+                  preStop:
+                    exec:
+                      command:
+                        - /bin/sh
+                        - -c
+                        - sleep 10
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                  fsGroup: 1000
+                  readOnlyRootFilesystem: false
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+
+  - patch: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: cloudnative-app
+        labels:
+          app.kubernetes.io/component: backend
+      spec:
+        type: ClusterIP
+        sessionAffinity: ClientIP
+        sessionAffinityConfig:
+          clientIP:
+            timeoutSeconds: 10800
+        ports:
+          - port: 80
+            targetPort: 8080
+            protocol: TCP
+            name: http
+          - port: 443
+            targetPort: 8443
+            protocol: TCP
+            name: https
+
+  - patch: |
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: cloudnative-app
+      spec:
+        minReplicas: 5
+        maxReplicas: 50
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 60
+          - type: Resource
+            resource:
+              name: memory
+              target:
+                type: Utilization
+                averageUtilization: 70
+        behavior:
+          scaleDown:
+            stabilizationWindowSeconds: 300
+            policies:
+              - type: Percent
+                value: 10
+                periodSeconds: 60
+          scaleUp:
+            stabilizationWindowSeconds: 0
+            policies:
+              - type: Percent
+                value: 100
+                periodSeconds: 15
+              - type: Pods
+                value: 4
+                periodSeconds: 15
+            selectPolicy: Max
+
+  - patch: |
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: cloudnative-app
+      spec:
+        podSelector:
+          matchLabels:
+            app: cloudnative-app
+        policyTypes:
+          - Ingress
+          - Egress
+        ingress:
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    name: ingress-nginx
+            ports:
+              - protocol: TCP
+                port: 8080
+        egress:
+          - to:
+              - podSelector: {}
+            ports:
+              - protocol: TCP
+                port: 8080
+          - to:
+              - namespaceSelector: {}
+            ports:
+              - protocol: TCP
+                port: 53
+              - protocol: UDP
+                port: 53
+
+images:
+  - name: ghcr.io/your-org/your-repo
+    newName: ghcr.io/your-org/your-repo
+    newTag: latest
+    digest: sha256:abc123def456...
+
+configMapGenerator:
+  - name: app-config
+    literals:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=info
+      - CACHE_TTL=600
+      - API_TIMEOUT=10s
+      - ENABLE_METRICS=true
+      - ENABLE_TRACING=true
+      - BACKUP_ENABLED=true
+    behavior: create
+
+  - name: production-env
+    literals:
+      - REGION=us-east-1
+      - ZONE=primary
+      - COMPLIANCE_MODE=strict
+
+replicas:
+  - name: cloudnative-app
+    count: 5
+
+patchesStrategicMerge:
+  - pod-disruption-budget.yaml
+  - network-policy.yaml
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - network-policy.yaml
+  - serviceaccount.yaml
+  - prometheus-monitor.yaml
+
+vars:
+  - name: ENV_NAME
+    objref:
+      kind: Namespace
+      name: production
+      apiVersion: v1
+    fieldref:
+      fieldpath: metadata.name
+
+commonAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"

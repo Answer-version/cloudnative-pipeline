@@ -1,0 +1,217 @@
+# ===================================================================
+# CloudNative Pipeline - ConfigMap 配置
+# ===================================================================
+# 部署命令: kubectl apply -f k8s/base/configmap.yaml
+# ===================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudnative-pipeline-config
+  namespace: pipeline
+  labels:
+    app: cloudnative-pipeline
+    app.kubernetes.io/name: cloudnative-pipeline
+  annotations:
+    description: "CloudNative Pipeline 应用配置"
+data:
+  # ----------------------------------------------------------------
+  # 应用基本配置
+  # ----------------------------------------------------------------
+  APP_ENV: "production"
+  APP_PORT: "8080"
+  APP_LOG_LEVEL: "info"
+  APP_HOST: "0.0.0.0"
+
+  # ----------------------------------------------------------------
+  # Pipeline 任务配置
+  # ----------------------------------------------------------------
+  PIPELINE_WORKERS: "4"
+  PIPELINE_QUEUE_NAME: "pipeline-tasks"
+  PIPELINE_MAX_RETRIES: "3"
+  PIPELINE_TASK_TIMEOUT: "3600"
+
+  # ----------------------------------------------------------------
+  # HTTP 服务器配置
+  # ----------------------------------------------------------------
+  HTTP_READ_TIMEOUT: "60"
+  HTTP_WRITE_TIMEOUT: "60"
+  HTTP_IDLE_TIMEOUT: "120"
+  HTTP_MAX_HEADER_BYTES: "4096"
+
+  # ----------------------------------------------------------------
+  # 数据库连接池配置
+  # ----------------------------------------------------------------
+  DB_MAX_OPEN_CONNS: "25"
+  DB_MAX_IDLE_CONNS: "5"
+  DB_CONN_MAX_LIFETIME: "300"
+  DB_CONN_MAX_IDLE_TIME: "60"
+
+  # ----------------------------------------------------------------
+  # Redis 配置
+  # ----------------------------------------------------------------
+  REDIS_DB: "0"
+  REDIS_POOL_SIZE: "10"
+  REDIS_MIN_IDLE_CONNS: "2"
+  REDIS_POOL_TIMEOUT: "30"
+
+  # ----------------------------------------------------------------
+  # S3 存储配置
+  # ----------------------------------------------------------------
+  S3_BUCKET: "pipeline-artifacts"
+  S3_REGION: "us-east-1"
+  S3_PATH_STYLE: "true"
+
+  # ----------------------------------------------------------------
+  # OpenTelemetry 配置
+  # ----------------------------------------------------------------
+  OTEL_SERVICE_NAME: "cloudnative-pipeline"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
+  OTEL_TRACES_SAMPLER_ARG: "0.1"
+
+  # ----------------------------------------------------------------
+  # Prometheus 指标配置
+  # ----------------------------------------------------------------
+  METRICS_ENABLED: "true"
+  METRICS_PATH: "/metrics"
+
+  # ----------------------------------------------------------------
+  # 健康检查配置
+  # ----------------------------------------------------------------
+  HEALTH_CHECK_INTERVAL: "30"
+  READINESS_CHECK_INTERVAL: "10"
+
+---
+
+# ===================================================================
+# Pipeline Worker ConfigMap
+# ===================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-worker-config
+  namespace: pipeline
+  labels:
+    app: cloudnative-pipeline
+    component: worker
+data:
+  # Worker 并发数
+  WORKER_CONCURRENCY: "4"
+
+  # Worker 类型
+  WORKER_TYPES: "build,push,deploy,notify"
+
+  # 构建配置
+  BUILD_TIMEOUT: "1800"
+  BUILD_WORKDIR: "/tmp/builds"
+
+  # Docker 配置
+  DOCKER_BUILDER: "docker-container"
+  DOCKER_REGISTRY: "registry.example.com"
+
+  # 通知配置
+  NOTIFY_ON_SUCCESS: "false"
+  NOTIFY_ON_FAILURE: "true"
+
+---
+
+# ===================================================================
+# Nginx Ingress 配置
+# ===================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-ingress-config
+  namespace: pipeline
+  labels:
+    app: nginx-ingress
+data:
+  # 连接配置
+  proxy-connect-timeout: "30"
+  proxy-send-timeout: "60"
+  proxy-read-timeout: "60"
+
+  # 缓冲区配置
+  proxy-body-size: "100m"
+  proxy-buffering: "on"
+
+  # 日志配置
+  access-log-path: "/var/log/nginx/access.log"
+  error-log-path: "/var/log/nginx/error.log"
+
+  # Gzip 压缩
+  enable-gzip: "true"
+  gzip-level: "6"
+  gzip-types: "application/json,application/xml,text/plain,text/css,application/javascript"
+
+---
+
+# ===================================================================
+# Prometheus 配置
+# ===================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: pipeline
+  labels:
+    app: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'pipeline-production'
+        env: 'production'
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: []
+
+    scrape_configs:
+      # Prometheus 自身
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      # 应用指标
+      - job_name: 'cloudnative-pipeline'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+      # Kubernetes API Server
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: keep
+            source_labels: [__meta_kubernetes_service_name]
+            regex: kubernetes

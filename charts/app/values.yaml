@@ -1,0 +1,394 @@
+# ===================================================================
+# CloudNative Pipeline - Helm Chart Values
+# ===================================================================
+# 自定义配置:
+#   helm install cloudnative-pipeline ./charts/app -f values.yaml
+#
+# 参考文档:
+#   https://helm.sh/docs/chart_best_practices/values/
+# ===================================================================
+
+# -----------------------------------------------------------------
+# 全局配置
+# -----------------------------------------------------------------
+global:
+  # 默认镜像仓库
+  imageRegistry: registry.example.com
+  # 默认镜像标签
+  imageTag: "v1.0.0"
+  # Kubernetes 存储类
+  storageClass: "standard"
+  # 是否启用 Istio
+  istio:
+    enabled: false
+
+# -----------------------------------------------------------------
+# 应用名称（覆盖 Chart.yaml 中的 name）
+# -----------------------------------------------------------------
+nameOverride: ""
+fullnameOverride: ""
+
+# -----------------------------------------------------------------
+# 命名空间
+# -----------------------------------------------------------------
+namespaceOverride: ""
+
+# -----------------------------------------------------------------
+# 副本配置
+# -----------------------------------------------------------------
+replicaCount: 3
+
+# -----------------------------------------------------------------
+# 镜像配置
+# -----------------------------------------------------------------
+image:
+  repository: cloudnative-pipeline
+  pullPolicy: IfNotPresent
+  # 默认标签（如果未指定）
+  tag: ""
+
+  # 镜像拉取密钥
+  pullSecrets:
+    # - name: registry-credentials
+
+# -----------------------------------------------------------------
+# 服务配置
+# -----------------------------------------------------------------
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+    metrics: 9090
+  # Service 注解
+  annotations: {}
+    # cloud.google.com/load-balancer-type: "Internal"
+
+# -----------------------------------------------------------------
+# 入口配置
+# -----------------------------------------------------------------
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: pipeline.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: cloudnative-pipeline-tls
+      hosts:
+        - pipeline.example.com
+
+# -----------------------------------------------------------------
+# 资源限制
+# -----------------------------------------------------------------
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# -----------------------------------------------------------------
+# 容器配置
+# -----------------------------------------------------------------
+container:
+  port: 8080
+  metricsPort: 9090
+  # 存活探针
+  livenessProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  # 就绪探针
+  readinessProbe:
+    enabled: true
+    path: /ready
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+    successThreshold: 1
+  # 启动探针
+  startupProbe:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 0
+    periodSeconds: 5
+    failureThreshold: 30
+
+# -----------------------------------------------------------------
+# 挂载卷
+# -----------------------------------------------------------------
+persistence:
+  enabled: false
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+
+extraVolumes: []
+#  - name: config
+#    configMap:
+#      name: my-config
+extraVolumeMounts: []
+#  - name: config
+#    mountPath: /app/config
+
+# -----------------------------------------------------------------
+# 数据库配置（PostgreSQL）
+# -----------------------------------------------------------------
+postgresql:
+  enabled: true
+  # 使用 Bitnami chart
+  auth:
+    username: pipeline_user
+    database: pipeline_db
+    # 建议使用 existingSecret
+    # existingSecret: cloudnative-pipeline-secrets
+    # secretKeys:
+    #   postgres-password: db-password
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClass: ""
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    service:
+      ports:
+        postgresql: 5432
+
+# -----------------------------------------------------------------
+# Redis 配置
+# -----------------------------------------------------------------
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    # 建议使用 existingSecret
+    # existingSecret: cloudnative-pipeline-secrets
+    # secretKeys:
+    #   redis-password: redis-password
+  commonConfiguration: |
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+    appendonly yes
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# -----------------------------------------------------------------
+# MinIO 配置
+# -----------------------------------------------------------------
+minio:
+  enabled: true
+  auth:
+    rootUser: minioadmin
+    # 建议使用 existingSecret
+    # existingSecret: cloudnative-pipeline-secrets
+    # secretKeys:
+    #   root-user: s3-access-key
+    #   root-password: s3-secret-key
+  apiPort: 9000
+  consolePort: 9001
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# -----------------------------------------------------------------
+# Pipeline 专用配置
+# -----------------------------------------------------------------
+pipeline:
+  workers: 4
+  queueName: "pipeline-tasks"
+  maxRetries: 3
+  taskTimeout: 3600
+  buildTimeout: 1800
+  workerConcurrency: 4
+  workerTypes: "build,push,deploy,notify"
+
+# -----------------------------------------------------------------
+# 环境变量
+# -----------------------------------------------------------------
+env:
+  # APP_ENV: "production"
+  # GIN_MODE: "release"
+  # PIPELINE_WORKERS: "4"
+  # PIPELINE_QUEUE_NAME: "pipeline-tasks"
+
+# 机密信息（建议使用 sealed-secrets 或 external-secrets）
+# secrets:
+#   db-username: "pipeline_user"
+#   db-password: ""
+#   redis-password: ""
+#   jwt-secret: ""
+
+# -----------------------------------------------------------------
+# 安全配置
+# -----------------------------------------------------------------
+securityContext:
+  enabled: true
+  runAsNonRoot: true
+  runAsUser: 10000
+  fsGroup: 10000
+
+podSecurityContext:
+  enabled: true
+  seccompProfile:
+    type: RuntimeDefault
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+
+# Pod 亲和性
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - cloudnative-pipeline
+          topologyKey: kubernetes.io/hostname
+
+# 节点选择器
+nodeSelector: {}
+#   node-role.kubernetes.io/worker: ""
+
+# 容忍
+tolerations: []
+#   - key: "node-role"
+#     operator: "Equal"
+#     value: "worker"
+#     effect: "NoSchedule"
+
+# -----------------------------------------------------------------
+# 监控配置
+# -----------------------------------------------------------------
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    namespace: monitoring
+    additionalLabels:
+      release: prometheus
+
+# -----------------------------------------------------------------
+# Tracing 配置
+# -----------------------------------------------------------------
+tracing:
+  enabled: false
+  endpoint: "http://jaeger-collector:4317"
+  serviceName: "cloudnative-pipeline"
+  samplingRate: "0.1"
+
+# -----------------------------------------------------------------
+# 初始化容器
+# -----------------------------------------------------------------
+initContainers:
+  # 等待数据库就绪
+  waitForDb:
+    enabled: true
+    image:
+      repository: busybox
+      tag: "1.36"
+    command:
+      - sh
+      - -c
+      - |
+        echo "Waiting for PostgreSQL..."
+        until nc -z {{ include "cloudnative-pipeline.postgresql.fullname" . }} 5432; do
+          echo "PostgreSQL is not ready, waiting..."
+          sleep 2
+        done
+        echo "PostgreSQL is ready!"
+
+# -----------------------------------------------------------------
+# 生命周期钩子
+# -----------------------------------------------------------------
+lifecycle:
+  preStop:
+    exec:
+      command:
+        - sh
+        - -c
+        - "sleep 5"
+
+# -----------------------------------------------------------------
+# 测试配置
+# -----------------------------------------------------------------
+test:
+  enabled: true
+  image:
+    repository: curlimages/curl
+    tag: "8.5.0"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+# -----------------------------------------------------------------
+# 横向自动扩展（HPA）
+# -----------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# -----------------------------------------------------------------
+# 策略配置
+# -----------------------------------------------------------------
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# -----------------------------------------------------------------
+# 终止处理
+# -----------------------------------------------------------------
+terminationGracePeriodSeconds: 60
+
+# -----------------------------------------------------------------
+# 网络策略
+# -----------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  allowExternal: true

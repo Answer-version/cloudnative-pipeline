@@ -1,0 +1,71 @@
+# AlertManager Email 通知配置模板
+# 使用此模板配置 Email 接收者
+
+receiver: email-notifications
+email_configs:
+  - to: alerts@example.com
+    send_resolved: true
+    from: alertmanager@yourcompany.com
+    smarthost: smtp.example.com:587
+    auth_username: alertmanager@example.com
+    auth_password: <YOUR_SMTP_PASSWORD>
+    auth_identity: alertmanager@example.com
+    headers:
+      subject: '[{{ .Status | toUpper }}] Prometheus Alert: {{ .GroupLabels.alertname }}'
+    html: |
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            .alert { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+            .alert.firing { border-left: 4px solid #dc3545; }
+            .alert.resolved { border-left: 4px solid #28a745; }
+            .label { display: inline-block; background: #e9ecef; padding: 2px 8px; border-radius: 3px; margin: 2px; }
+            .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+          </style>
+        </head>
+        <body>
+          <h1>🔔 {{ .Status | toUpper }} - {{ .GroupLabels.alertname }}</h1>
+          {{ if .Alerts.Firing }}
+          <h2>Firing Alerts ({{ .Alerts.Firing | len }})</h2>
+          {{ range .Alerts.Firing }}
+          <div class="alert firing">
+            <h3>{{ .Labels.alertname }}</h3>
+            <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+            <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+            <p><strong>Severity:</strong> <span class="label">{{ .Labels.severity }}</span></p>
+            <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+            {{ if .Annotations.runbook_url }}
+            <p><a href="{{ .Annotations.runbook_url }}">📖 Runbook</a></p>
+            {{ end }}
+            {{ if .Annotations.dashboard_url }}
+            <p><a href="{{ .Annotations.dashboard_url }}">📊 Dashboard</a></p>
+            {{ end }}
+            <p><strong>Labels:</strong></p>
+            <p>
+            {{ range .Labels.SortedPairs }}
+              <span class="label">{{ .Name }}: {{ .Value }}</span>
+            {{ end }}
+            </p>
+          </div>
+          {{ end }}
+          {{ end }}
+          {{ if .Alerts.Resolved }}
+          <h2>Resolved Alerts ({{ .Alerts.Resolved | len }})</h2>
+          {{ range .Alerts.Resolved }}
+          <div class="alert resolved">
+            <h3>{{ .Labels.alertname }}</h3>
+            <p><strong>Duration:</strong> {{ .Duration.String }}</p>
+            <p><strong>Resolved at:</strong> {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+          </div>
+          {{ end }}
+          {{ end }}
+          <hr>
+          <p style="color: #666; font-size: 12px;">
+            This alert was sent by Prometheus AlertManager.<br>
+            <a href="{{ .DashboardURL }}">View Dashboard</a> |
+            <a href="{{ .ExternalURL }}">View AlertManager</a>
+          </p>
+        </body>
+      </html>

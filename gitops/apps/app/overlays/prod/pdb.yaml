@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cloudnative-app
+  labels:
+    app: cloudnative-app
+    app.kubernetes.io/name: cloudnative-app
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: cloudnative-app

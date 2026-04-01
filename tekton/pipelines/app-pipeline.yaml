@@ -1,0 +1,165 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: app-pipeline
+  namespace: tekton-ci
+  labels:
+    app: cloudnative-app
+spec:
+  description: |
+    Cloud-native application CI/CD pipeline with automated testing,
+    building, pushing images, and deploying to dev environment.
+  params:
+    - name: git-url
+      type: string
+      description: Git repository URL
+    - name: git-revision
+      type: string
+      default: main
+      description: Git revision (branch, tag, or commit)
+    - name: image-name
+      type: string
+      description: Image name for the built container
+    - name: image-tag
+      type: string
+      default: latest
+      description: Image tag
+    - name: registry-url
+      type: string
+      default: ghcr.io
+      description: Container registry URL
+    - name: namespace
+      type: string
+      default: dev
+      description: Target deployment namespace
+    - name: sonarqube-token
+      type: string
+      description: SonarQube authentication token
+      secret: true
+  tasks:
+    - name: clone-source
+      taskRef:
+        name: clone-source
+        kind: Task
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+        - name: submodules
+          value: 'true'
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    - name: run-tests
+      taskRef:
+        name: run-tests
+        kind: Task
+      runAfter:
+        - clone-source
+      params:
+        - name: test-command
+          value: go test -v -race ./...
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: cache
+          workspace: go-cache
+      results:
+        - name: test-result
+          description: Test execution result
+        - name: coverage
+          description: Test coverage percentage
+
+    - name: build-image
+      taskRef:
+        name: build-image
+        kind: Task
+      runAfter:
+        - run-tests
+      params:
+        - name: image-name
+          value: $(params.image-name)
+        - name: image-tag
+          value: $(params.image-tag)
+        - name: registry-url
+          value: $(params.registry-url)
+        - name: dockerfile
+          value: ./Dockerfile
+        - name: context
+          value: .
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: kaniko-cache
+          workspace: kaniko-cache
+      results:
+        - name: image-digest
+          description: Digest of the built image
+      retries: 2
+      timeout: 30m
+
+    - name: push-image
+      taskRef:
+        name: push-image
+        kind: Task
+      runAfter:
+        - build-image
+      params:
+        - name: image-name
+          value: $(params.image-name)
+        - name: image-tag
+          value: $(params.image-tag)
+        - name: registry-url
+          value: $(params.registry-url)
+        - name: image-digest
+          value: $(tasks.build-image.results.image-digest)
+      workspaces:
+        - name: push-config
+          workspace: docker-hub-credentials
+      retries: 2
+      timeout: 15m
+
+    - name: deploy-to-dev
+      taskRef:
+        name: deploy-to-dev
+        kind: Task
+      runAfter:
+        - push-image
+      params:
+        - name: image-name
+          value: $(params.image-name)
+        - name: image-tag
+          value: $(params.image-tag)
+        - name: namespace
+          value: $(params.namespace)
+      workspaces:
+        - name: kubeconfig
+          workspace: kubeconfig
+        - name: manifests
+          workspace: shared-workspace
+          subpath: gitops/apps/app/overlays/dev
+      retries: 1
+      timeout: 10m
+
+  workspaces:
+    - name: shared-workspace
+      description: Shared workspace for pipeline tasks
+    - name: go-cache
+      description: Go module cache
+    - name: kaniko-cache
+      description: Kaniko build cache
+    - name: docker-hub-credentials
+      description: Docker registry credentials
+    - name: kubeconfig
+      description: Kubernetes kubeconfig file
+
+  finally:
+    - name: cleanup
+      taskRef:
+        name: cleanup-workspace
+        kind: Task
+      workspaces:
+        - name: shared-workspace
+          workspace: shared-workspace

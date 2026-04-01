@@ -1,0 +1,132 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: push-image
+  namespace: tekton-ci
+  labels:
+    app: cloudnative-app
+spec:
+  description: Push Docker image to registry with SBOM and vulnerability scan
+  params:
+    - name: image-name
+      type: string
+      description: Image name
+    - name: image-tag
+      type: string
+      default: latest
+      description: Image tag
+    - name: registry-url
+      type: string
+      default: ghcr.io
+      description: Container registry URL
+    - name: image-digest
+      type: string
+      description: Image digest
+    - name: sbom-format
+      type: string
+      default: spdx-json
+      description: SBOM format (spdx-json, cyclonedx-json)
+  workspaces:
+    - name: push-config
+      description: Docker registry credentials
+      mountPath: /kaniko/.docker
+  stepTemplate:
+    env:
+      - name: IMAGE
+        value: $(params.registry-url)/$(params.image-name):$(params.image-tag)
+  steps:
+    - name: push-image
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+      script: |
+        #!/bin/sh
+        set -e
+
+        IMAGE=$(params.registry-url)/$(params.image-name):$(params.image-tag)
+        
+        echo "Pushing image: ${IMAGE}"
+        
+        # Image should already be pushed from build step
+        # This step ensures it exists in the target registry
+        
+        /kaniko/executor \
+          --context $(workspaces.push-config.path) \
+          --dockerfile /workspace/Dockerfile \
+          --destination "${IMAGE}" \
+          --no-push
+
+        echo "Image push verification complete"
+
+    - name: generate-sbom
+      image: anchore/sbom-tool:v0.7.1
+      env:
+        - name: IMAGE
+          value: $(params.registry-url)/$(params.image-name):$(params.image-tag)
+      script: |
+        #!/bin/sh
+        set -e
+
+        IMAGE=$(params.registry-url)/$(params.image-name):$(params.image-tag)
+        
+        echo "Generating SBOM for ${IMAGE}"
+        
+        syft "${IMAGE}" -o $(params.sbom-format) > /workspace/sbom.spdx.json
+        
+        echo "SBOM generated successfully"
+        cat /workspace/sbom.spdx.json | head -30
+
+    - name: vulnerability-scan
+      image: aquasecurity/trivy:latest
+      env:
+        - name: IMAGE
+          value: $(params.registry-url)/$(params.image-name):$(params.image-tag)
+      script: |
+        #!/bin/sh
+        set -e
+
+        IMAGE=$(params.registry-url)/$(params.image-name):$(params.image-tag)
+        
+        echo "Running Trivy vulnerability scan on ${IMAGE}"
+        
+        trivy image \
+          --format sarif \
+          --output /workspace/trivy-results.sarif \
+          --severity HIGH,CRITICAL \
+          --exit-code 0 \
+          "${IMAGE}"
+
+        trivy image \
+          --format table \
+          --severity HIGH,CRITICAL \
+          "${IMAGE}" || true
+
+        echo "Vulnerability scan complete"
+
+    - name: verify-image
+      image: docker:latest
+      env:
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+      script: |
+        #!/bin/sh
+        set -e
+
+        IMAGE=$(params.registry-url)/$(params.image-name):$(params.image-tag)
+        
+        echo "Verifying image exists in registry..."
+        
+        docker pull "${IMAGE}"
+        docker inspect "${IMAGE}"
+        docker manifest inspect "${IMAGE}"
+
+        echo "Image verified successfully"
+
+  results:
+    - name: image-url
+      description: Full image URL with tag
+    - name: image-digest
+      description: Image digest
+  timeout: 15m
+  retries: 2

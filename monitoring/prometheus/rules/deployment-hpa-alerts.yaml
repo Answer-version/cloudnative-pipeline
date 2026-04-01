@@ -1,0 +1,123 @@
+# Prometheus Alert Rules - Deployment & HPA
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: deployment-hpa-alerts
+  namespace: monitoring
+  labels:
+    app: prometheus
+    component: rules
+    release: prometheus-operator
+spec:
+  groups:
+    - name: deployment-health
+      rules:
+        # DeploymentReplicasMismatch - 副本数不匹配
+        - alert: DeploymentReplicasMismatch
+          expr: |
+            kube_deployment_spec_replicas != kube_deployment_status_replicas_available
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Deployment 副本数不匹配"
+            description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 期望副本数与可用副本数不一致 (期望: {{ $value }}, 当前可用: {{ $labels.deployment }})"
+            runbook_url: "https://runbooks.example.com/deployment-replicas-mismatch"
+
+        - alert: DeploymentReplicasZero
+          expr: |
+            kube_deployment_status_replicas_available == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Deployment 无可用副本"
+            description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 当前无可用副本"
+
+        # HPA 相关告警
+        - alert: HPAReplicasMismatch
+          expr: |
+            kube_hpa_status_desired_replicas != kube_hpa_status_current_replicas
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "HPA 当前副本数与期望不一致"
+            description: "HPA {{ $labels.namespace }}/{{ $labels.hpa }} 期望副本数与当前实际副本数不一致 (期望: {{ $labels.desired }}, 当前: {{ $labels.current }})"
+            runbook_url: "https://runbooks.example.com/hpa-replicas-mismatch"
+
+        - alert: HPAMaxReplicasReached
+          expr: |
+            kube_hpa_status_current_replicas == kube_hpa_spec_max_replicas
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "HPA 已达到最大副本数"
+            description: "HPA {{ $labels.namespace }}/{{ $labels.hpa }} 已扩展至最大副本数，可能需要调整 HPA 配置"
+
+        - alert: HPAminReplicasReached
+          expr: |
+            kube_hpa_status_current_replicas == kube_hpa_spec_min_replicas
+            and
+            kube_hpa_status_desired_replicas > kube_hpa_spec_min_replicas
+          for: 5m
+          labels:
+            severity: info
+            team: platform
+          annotations:
+            summary: "HPA 已收缩至最小副本数"
+            description: "HPA {{ $labels.namespace }}/{{ $labels.hpa }} 已收缩至最小副本数，当前负载较低"
+
+        # Deployment 更新失败
+        - alert: DeploymentUpdateFailed
+          expr: |
+            kube_deployment_status_observed_generation != kube_deployment_metadata_generation
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Deployment 更新失败"
+            description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 更新失败，请检查部署状态"
+
+    - name: workload-health
+      rules:
+        # StatefulSet 副本数不匹配
+        - alert: StatefulSetReplicasMismatch
+          expr: |
+            kube_statefulset_status_replicas != kube_statefulset_status_current_replicas
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "StatefulSet 副本数不匹配"
+            description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} 副本数不匹配"
+
+        # DaemonSet 不可用
+        - alert: DaemonSetNotScheduled
+          expr: |
+            kube_daemonset_status_number_unavailable > 0
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "DaemonSet 部分节点未调度"
+            description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} 有 {{ $value }} 个节点未调度 Pod"
+
+        # Job 执行失败
+        - alert: JobFailed
+          expr: |
+            kube_job_status_failed > 0
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Job 执行失败"
+            description: "Job {{ $labels.namespace }}/{{ $labels.job_name }} 执行失败"

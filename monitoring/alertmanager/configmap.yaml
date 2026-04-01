@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager
+  labels:
+    app: alertmanager
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: 'smtp.example.com:587'
+      smtp_from: 'alertmanager@example.com'
+      smtp_auth_username: 'alertmanager'
+      smtp_auth_password: '${SMTP_PASSWORD}'
+      slack_api_url: '${SLACK_WEBHOOK_URL}'
+      resolve_timeout: 5m
+
+    templates:
+      - '/etc/alertmanager/*.tmpl'
+
+    route:
+      receiver: 'default'
+      group_by: ['alertname', 'job', 'severity']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 12h
+      routes:
+        # Critical 告警 - 立即通知
+        - match:
+            severity: critical
+          receiver: 'critical'
+          group_wait: 0s
+          continue: true
+
+        # Warning 告警 - 正常工作通知
+        - match:
+            severity: warning
+          receiver: 'warning'
+          continue: true
+
+        # 业务告警
+        - match:
+            component: business
+          receiver: 'email'
+
+    receivers:
+      # 默认接收器
+      - name: 'default'
+        email_configs:
+          - to: 'alerts@example.com'
+            send_resolved: true
+            headers:
+              subject: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+            html: |
+              <h1>{{ .Status | toUpper }} - {{ .GroupLabels.alertname }}</h1>
+              {{ range .Alerts }}
+                <h2>Alert: {{ .Labels.alertname }}</h2>
+                <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+                <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+                <p><strong>Labels:</strong></p>
+                <ul>
+                {{ range .Labels.SortedPairs }}
+                  <li>{{ .Name }}: {{ .Value }}</li>
+                {{ end }}
+                </ul>
+                {{ if .Annotations.runbook_url }}
+                <p><a href="{{ .Annotations.runbook_url }}">Runbook</a></p>
+                {{ end }}
+              {{ end }}
+
+      # Critical 告警接收器
+      - name: 'critical'
+        email_configs:
+          - to: 'critical-alerts@example.com'
+            send_resolved: true
+        slack_configs:
+          - channel: '#critical-alerts'
+            send_resolved: true
+            title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+            color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+            text: |
+              {{ range .Alerts }}
+              *Alert:* {{ .Labels.alertname }}
+              *Summary:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Severity:* {{ .Labels.severity }}
+              *Start:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+              {{ if .Annotations.runbook_url }}
+              *Runbook:* {{ .Annotations.runbook_url }}
+              {{ end }}
+              {{ end }}
+
+      # Warning 告警接收器
+      - name: 'warning'
+        email_configs:
+          - to: 'alerts@example.com'
+            send_resolved: true
+        slack_configs:
+          - channel: '#alerts'
+            send_resolved: true
+            title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+            color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+
+    inhibit_rules:
+      # 当 Critical 告警存在时，抑制同标签的 Warning
+      - source_match:
+          severity: critical
+        target_match:
+          severity: warning
+        equal: ['alertname', 'namespace', 'pod']

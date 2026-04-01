@@ -1,0 +1,130 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: deploy-to-dev
+  namespace: tekton-ci
+  labels:
+    app: cloudnative-app
+spec:
+  description: Deploy application to development environment using Kustomize
+  params:
+    - name: image-name
+      type: string
+      description: Image name to deploy
+    - name: image-tag
+      type: string
+      default: latest
+      description: Image tag to deploy
+    - name: namespace
+      type: string
+      default: dev
+      description: Target namespace
+    - name: overlay-path
+      type: string
+      default: gitops/apps/app/overlays/dev
+      description: Kustomize overlay path
+    - name: kustomize-version
+      type: string
+      default: v5.4.1
+      description: Kustomize version
+  workspaces:
+    - name: kubeconfig
+      description: Kubernetes kubeconfig
+      mountPath: /kubeconfig
+    - name: manifests
+      description: Application manifests
+      mountPath: /workspace
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+      - name: KUBECONFIG
+        value: /kubeconfig/kubeconfig
+  steps:
+    - name: validate-kubeconfig
+      image: alpine/k8s:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        echo "Validating kubeconfig..."
+        cat /kubeconfig/kubeconfig | head -20
+        
+        kubectl cluster-info
+        kubectl get nodes
+
+    - name: kustomize-edit
+      image: kubernetes-release/kustomize:$(params.kustomize-version)
+      script: |
+        #!/bin/sh
+        set -e
+
+        cd $(workspaces.manifests.path)/$(params.overlay-path)
+
+        echo "Current kustomization.yaml:"
+        cat kustomization.yaml
+
+        IMAGE=$(params.image-name):$(params.image-tag)
+        
+        echo "Setting image to: ${IMAGE}"
+        kustomize edit set image "${IMAGE}"
+
+        echo "Updated kustomization.yaml:"
+        cat kustomization.yaml
+
+    - name: render-manifests
+      image: kubernetes-release/kustomize:$(params.kustomize-version)
+      script: |
+        #!/bin/sh
+        set -e
+
+        cd $(workspaces.manifests.path)/$(params.overlay-path)
+
+        echo "Rendering manifests..."
+        kustomize build . > /workspace/manifests.yaml
+
+        echo "Generated manifests (first 50 lines):"
+        head -50 /workspace/manifests.yaml
+
+    - name: apply-manifests
+      image: bitnami/kubectl:latest
+      env:
+        - name: NAMESPACE
+          value: $(params.namespace)
+      script: |
+        #!/bin/sh
+        set -e
+
+        kubectl apply -f /workspace/manifests.yaml --namespace=$(params.namespace) --dry-run=client
+
+        echo "Applying manifests to namespace: $(params.namespace)"
+        kubectl apply -f /workspace/manifests.yaml --namespace=$(params.namespace)
+
+    - name: verify-deployment
+      image: bitnami/kubectl:latest
+      env:
+        - name: NAMESPACE
+          value: $(params.namespace)
+      script: |
+        #!/bin/sh
+        set -e
+
+        echo "Waiting for rollout..."
+        kubectl rollout status deployment \
+          --namespace=$(params.namespace) \
+          --timeout=300s
+
+        echo "Current pods:"
+        kubectl get pods --namespace=$(params.namespace)
+
+        echo "Deployment verification complete"
+
+  results:
+    - name: deployment-name
+      description: Name of the deployment
+    - name: namespace
+      description: Target namespace
+    - name: image-deployed
+      description: Image that was deployed
+  timeout: 10m
+  retries: 1

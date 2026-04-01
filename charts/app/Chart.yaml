@@ -1,0 +1,77 @@
+# ===================================================================
+# CloudNative Pipeline - Helm Chart
+# ===================================================================
+# 部署命令:
+#   helm install cloudnative-pipeline ./charts/app
+#   helm upgrade cloudnative-pipeline ./charts/app --install
+#
+# 模板变量参考:
+#   https://helm.sh/docs/chart_template_guide/
+# ===================================================================
+
+apiVersion: v2
+name: cloudnative-pipeline
+description: |
+  CloudNative Pipeline - 云原生流水线开发平台
+
+  特性:
+  - 多阶段构建支持
+  - 并行任务执行
+  - 实时日志查看
+  - Prometheus 指标监控
+  - OpenTelemetry 分布式追踪
+
+type: application
+
+# 版本号（遵循 SemVer 2）
+version: 1.0.0
+
+# 应用版本（对应镜像标签）
+appVersion: "v1.0.0"
+
+# 关键字
+keywords:
+  - pipeline
+  - ci/cd
+  - cloudnative
+  - kubernetes
+  - devops
+
+# 维护者信息
+maintainers:
+  - name: Pipeline Team
+    email: team@example.com
+    url: https://example.com/team
+
+# 关联项目
+home: https://github.com/example/cloudnative-pipeline
+sources:
+  - https://github.com/example/cloudnative-pipeline
+  - https://github.com/example/cloudnative-pipeline/helm
+
+# 依赖
+dependencies:
+  - name: postgresql
+    version: "12.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+  - name: redis
+    version: "17.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+  - name: minio
+    version: "12.x.x"
+    repository: "https://charts.minio.io"
+    condition: minio.enabled
+
+# Kubernetes 版本兼容
+kubeVersion: ">=1.24.0"
+
+# annotations
+annotations:
+  category: DeveloperTools
+  licenses: Apache-2.0
+  # 示例: artifacthub.io/changes 注释
+  # artifacthub.io/changes: |
+  #   - kind: changed
+  #     description: "Updated to use Go 1.22"

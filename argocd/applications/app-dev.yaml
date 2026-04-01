@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-dev
+  namespace: argocd
+  labels:
+    app: cloudnative-app
+    environment: dev
+    tier: application
+  finalizers:
+    - resources.finalizer.argocd.argoproj.io
+spec:
+  project: cloudnative-project
+  
+  source:
+    repoURL: https://github.com/your-org/gitops.git
+    targetRevision: main
+    path: gitops/apps/app/overlays/dev
+    kustomize:
+      images:
+        - ghcr.io/your-org/your-repo:$(IMAGE_TAG)
+      commonAnnotations:
+        environment: dev
+        managed-by: argocd
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+      - Replace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    ignoreDifferences:
+      - group: apps
+        kind: Deployment
+        jsonPointers:
+          - /spec/replicas
+      - group: ""
+        kind: ServiceAccount
+        jsonPointers:
+          - /secrets
+   revisionHistoryLimit: 10
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/replicas
+
+  info:
+    - name: Environment
+      value: development
+    - name: Team
+      value: platform-engineering
+    - name: Namespace
+      value: dev
+    - name: SyncPolicy
+      value: automated

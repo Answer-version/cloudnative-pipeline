@@ -1,0 +1,136 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: cloudnative-project
+  namespace: argocd
+  labels:
+    app: cloudnative-app
+    team: platform-engineering
+spec:
+  description: Cloud-native application project for CI/CD
+  
+  sourceRepos:
+    - https://github.com/your-org/gitops.git
+    - https://github.com/your-org/your-repo.git
+    - https://github.com/your-org/k8s-manifests.git
+    - ssh://git@github.com/your-org/gitops.git
+    - ssh://git@github.com/your-org/your-repo.git
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: dev
+      name: local
+    - server: https://kubernetes.default.svc
+      namespace: staging
+      name: local-staging
+    - server: https://kubernetes.prod-cluster.example.com
+      namespace: production
+      name: prod
+    - server: https://kubernetes.prod-cluster.example.com
+      namespace: production-istio
+      name: prod-istio
+    - server: https://kubernetes.sandbox-cluster.example.com
+      namespace: sandbox-*
+      name: sandbox
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+    - group: ""
+      kind: NetworkPolicy
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: ServiceAccount
+      # Secrets are managed via external secrets operator
+
+  permittedSourceRepositories:
+    - https://github.com/your-org/gitops.git
+    - https://github.com/your-org/your-repo.git
+    - ssh://git@github.com/your-org/gitops.git
+    - ssh://git@github.com/your-org/your-repo.git
+
+  roles:
+    - name: application-admin
+      description: Application admin role
+      policies:
+        - p, proj:cloudnative-project:application-admin, applications, *, cloudnative-project/*, allow
+        - p, proj:cloudnative-project:application-admin, applications, sync, cloudnative-project/*, allow
+        - p, proj:cloudnative-project:application-admin, applications, override, cloudnative-project/*, allow
+        - p, proj:cloudnative-project:application-admin, applications, terminate, cloudnative-project/*, allow
+      groups:
+        - platform-engineers@example.com
+
+    - name: read-only
+      description: Read-only access
+      policies:
+        - p, proj:cloudnative-project:read-only, applications, get, cloudnative-project/*, allow
+        - p, proj:cloudnative-project:read-only, applications, list, cloudnative-project/*, allow
+        - p, proj:cloudnative-project:read-only, applications, watch, cloudnative-project/*, allow
+      groups:
+        - developers@example.com
+
+    - name: dev-environment
+      description: Dev environment deployer
+      policies:
+        - p, proj:cloudnative-project:dev-environment, applications, *, dev/*, allow
+        - p, proj:cloudnative-project:dev-environment, applications, *, staging/*, allow
+      groups:
+        - developers@example.com
+        - ci-bot@example.com
+
+    - name: production-admin
+      description: Production admin (restricted access)
+      policies:
+        - p, proj:cloudnative-project:production-admin, applications, *, production/*, allow
+        - p, proj:cloudnative-project:production-admin, applications, sync, production/*, deny
+        - p, proj:cloudnative-project:production-admin, applications, override, production/*, deny
+      groups:
+        - platform-engineers@example.com
+        - release-managers@example.com
+
+  syncWindows:
+    - name: production-blocked
+      kind: block
+      schedule: "0 18 * * 1-5"
+      duration: 2h
+      clusters:
+        - prod
+      namespaces:
+        - production
+      applications:
+        - cloudnative-project/app-prod
+      manualSync: false
+
+    - name: prod-deploy-window
+      kind: allow
+      schedule: "0 10-16 * * 1-5"
+      duration: 6h
+      clusters:
+        - prod
+      namespaces:
+        - production
+      applications:
+        - cloudnative-project/app-prod
+      manualSync: true
+
+  signatureKeys:
+    - keyID: https://keybase.io/your-org/pgp_keys.asc
+
+  metadata:
+    annotations:
+      argocd-autopilot.kubernetes.io/description: |
+        Cloud-native application project with automated GitOps workflows
+      argocd.project.environment: multi
+      compliance-requirements: |
+        - PCI-DSS
+        - SOC2
+        - GDPR

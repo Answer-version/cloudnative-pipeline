@@ -1,0 +1,58 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: clone-source
+  namespace: tekton-ci
+  labels:
+    app: cloudnative-app
+spec:
+  description: Clone source code from Git repository
+  params:
+    - name: url
+      type: string
+      description: Git repository URL
+    - name: revision
+      type: string
+      default: main
+      description: Git revision (branch, tag, or commit)
+    - name: submodules
+      type: string
+      default: 'true'
+      description: Whether to clone submodules
+    - name: depth
+      type: string
+      default: '1'
+      description: Shallow clone depth
+  workspaces:
+    - name: output
+      description: Workspace to clone into
+      mountPath: /workspace
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+  steps:
+    - name: clone
+      image: alpine/git:v2.43.0
+      script: |
+        #!/bin/sh
+        set -e
+
+        if [ "$(params.submodules)" = "true" ]; then
+          git submodule update --init --recursive
+        fi
+
+        echo "Cloning $(params.url) at revision $(params.revision)"
+        git clone --depth $(params.depth) --branch $(params.revision) $(params.url) $(workspaces.output.path)
+        
+        cd $(workspaces.output.path)
+        git rev-parse HEAD > /tekton/results/commit
+        git log -1 --format='%H' > /tekton/results/commit
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+  results:
+    - name: commit
+      description: Committed commit SHA
+    - name: short-commit
+      description: Short commit SHA

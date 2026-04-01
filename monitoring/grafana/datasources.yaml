@@ -1,0 +1,115 @@
+# Grafana Datasources Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app: grafana
+    component: datasources
+data:
+  datasources.yaml: |
+    apiVersion: 1
+
+    datasources:
+      # Prometheus 数据源
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus.monitoring.svc:9090
+        isDefault: true
+        editable: false
+        jsonData:
+          httpMethod: POST
+          timeInterval: 15s
+          queryTimeout: 60s
+          manageAlerts: true
+          prometheusType: Prometheus
+          prometheusVersion: 2.45.0
+          cacheLevel: 'High'
+          incrementalQueryOverlapWindow: 10m
+          disableRecordingRules: false
+          defaultRegion: us-east-1
+          customQueryParameters: {}
+        secureJsonData:
+          # 对于认证 Prometheus，可配置 API Key
+          # apiKey: ${PROMETHEUS_API_KEY}
+        # 企业版 Prometheus (如有)
+        # - name: Prometheus-Enterprise
+        #   type: prometheus
+        #   uid: prometheus-enterprise
+        #   access: proxy
+        #   url: https://prometheus-enterprise.example.com
+        #   editable: false
+        #   jsonData:
+        #     prometheusType: Cortex
+        #     prometheusVersion: 1.11.1
+        #   secureJsonData:
+        #     basicAuthPassword: ${PROMETHEUS_ENTERPRISE_PASSWORD}
+
+      # Loki 日志数据源
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.monitoring.svc:3100
+        editable: false
+        jsonData:
+          httpMethod: GET
+          timeInterval: 30s
+          maxLines: 5000
+          derivedFields:
+            # 解析日志中的 trace_id 并关联到 Jaeger
+            - name: TraceID
+              matcherRegex: "trace_id=(\\w+)"
+              url: http://jaeger-query.monitoring.svc:16686/trace/$${1}
+              urlDisplayLabel: View Trace
+            # 解析日志中的 pod 名称并关联到 K8s
+            - name: PodName
+              matcherRegex: "pod_name=([a-zA-Z0-9-]+)"
+              url: http://kubernetes-dashboard.kube-system.svc/api/v1/namespaces/${1}
+              urlDisplayLabel: View Pod
+          timeout: 10s
+        # 企业版 Loki (如有)
+        # - name: Loki-Enterprise
+        #   type: loki
+        #   uid: loki-enterprise
+        #   access: proxy
+        #   url: https://loki-enterprise.example.com
+        #   editable: false
+
+      # AlertManager 数据源 (用于告警状态展示)
+      - name: AlertManager
+        type: alertmanager
+        uid: alertmanager
+        access: proxy
+        url: http://alertmanager-main.monitoring.svc:9093
+        editable: false
+        jsonData:
+          implementation: prometheus
+
+---
+# Grafana Dashboard Provider
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+  labels:
+    app: grafana
+    component: dashboards
+data:
+  dashboardproviders.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: true

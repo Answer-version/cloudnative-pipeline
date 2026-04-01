@@ -1,0 +1,153 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: app-dev
+  annotations:
+    environment: dev
+    team: platform-engineering
+    description: Development environment configuration
+
+commonLabels:
+  app: cloudnative-app
+  environment: dev
+  managed-by: kustomize
+
+namespace: dev
+
+bases:
+  - ../../base
+
+patches:
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: cloudnative-app
+        labels:
+          app.kubernetes.io/version: dev
+      spec:
+        replicas: 2
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+        template:
+          metadata:
+            labels:
+              app: cloudnative-app
+              environment: dev
+          spec:
+            containers:
+              - name: app
+                env:
+                  - name: ENV
+                    value: development
+                  - name: LOG_LEVEL
+                    value: debug
+                  - name: DATABASE_HOST
+                    value: dev-db.example.com
+                  - name: REDIS_HOST
+                    value: dev-redis.example.com
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                readinessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8080
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+
+  - patch: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: cloudnative-app
+      spec:
+        type: ClusterIP
+        ports:
+          - port: 80
+            targetPort: 8080
+            protocol: TCP
+            name: http
+
+  - patch: |
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: cloudnative-app
+      spec:
+        minReplicas: 2
+        maxReplicas: 10
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
+          - type: Resource
+            resource:
+              name: memory
+              target:
+                type: Utilization
+                averageUtilization: 80
+
+images:
+  - name: ghcr.io/your-org/your-repo
+    newName: ghcr.io/your-org/your-repo
+    newTag: dev-latest
+    commonAnnotation: |
+      environment=dev
+
+configMapGenerator:
+  - name: app-config
+    literals:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=debug
+      - CACHE_TTL=300
+      - API_TIMEOUT=30s
+    behavior: create
+
+replicas:
+  - name: cloudnative-app
+    count: 2
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - service.yaml
+  - hpa.yaml
+
+namespaceGenerator:
+  - kind: Namespace
+    apiVersion: v1
+    name: dev
+
+vars:
+  - name: ENV_NAME
+    objref:
+      kind: Namespace
+      name: dev
+      apiVersion: v1
+    fieldref:
+      fieldpath: metadata.name
+
+configMapPrefixes:
+  - app-config-
+
+configurationLabels:
+  tier: application
+  environment: dev

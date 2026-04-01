@@ -1,0 +1,180 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: app-git-listener
+  namespace: tekton-ci
+  labels:
+    app: cloudnative-app
+spec:
+  serviceAccountName: tekton-triggers-admin
+  triggers:
+    - name: git-push-trigger
+      interceptors:
+        - ref:
+            apiVersion: triggers.tekton.dev/v1beta1
+            name: github-interceptor
+          params:
+            - name: secretRef
+              value:
+                secretName: github-secret
+                secretKey: secretToken
+            - name: eventTypes
+              value:
+                - push
+                - pull_request
+        - ref:
+            apiVersion: triggers.tekton.dev/v1beta1
+            name: cel-interceptor
+          params:
+            - name: filter
+              value: |
+                body.ref.startsWith("refs/heads/")
+        - ref:
+            apiVersion: triggers.tekton.dev/v1beta1
+            name: gitlab-interceptor
+      bindings:
+        - ref: git-push-binding
+      template:
+        ref: app-pipeline-template
+      interceptors:
+        - cel:
+            filter: |
+              body.repository.full_name == "your-org/your-repo"
+            overlays:
+              - expression: body.commits[0].message
+                name: commit-message
+  resources:
+    kubernetesResource:
+      spec:
+        template:
+          spec:
+            serviceAccountName: tekton-triggers-admin
+            containers:
+              - env:
+                  - name: PORT
+                    value: "8080"
+                  - name: SSL
+                    value: "false"
+  serviceType: ClusterIP
+
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: git-push-binding
+  namespace: tekton-ci
+spec:
+  params:
+    - name: git-url
+      value: $(body.repository.clone_url)
+    - name: git-revision
+      value: $(body.ref)
+    - name: git-commit
+      value: $(body.after)
+    - name: commit-message
+      value: $(body.commits[0].message)
+    - name: commit-author
+      value: $(body.commits[0].author.name)
+    - name: repository-name
+      value: $(body.repository.full_name)
+    - name: repository-url
+      value: $(body.repository.html_url)
+
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: git-pr-binding
+  namespace: tekton-ci
+spec:
+  params:
+    - name: git-url
+      value: $(body.pull_request.head.repo.clone_url)
+    - name: git-revision
+      value: $(body.pull_request.head.ref)
+    - name: git-commit
+      value: $(body.pull_request.head.sha)
+    - name: commit-message
+      value: $(body.pull_request.title)
+    - name: commit-author
+      value: $(body.pull_request.user.login)
+    - name: pr-number
+      value: $(body.pull_request.number)
+    - name: pr-title
+      value: $(body.pull_request.title)
+    - name: pr-action
+      value: $(body.action)
+
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: app-pipeline-template
+  namespace: tekton-ci
+spec:
+  params:
+    - name: git-url
+      description: Git repository URL
+      default: https://github.com/your-org/your-repo.git
+    - name: git-revision
+      description: Git revision (branch, tag, or commit)
+      default: main
+    - name: git-commit
+      description: Git commit SHA
+    - name: commit-message
+      description: Commit message
+    - name: commit-author
+      description: Commit author
+    - name: repository-name
+      description: Repository full name
+    - name: pr-number
+      description: Pull request number (if applicable)
+    - name: pr-title
+      description: Pull request title
+    - name: pr-action
+      description: Pull request action
+  resourceTemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: app-pipeline-run-$(params.git-commit)-
+        labels:
+          app: cloudnative-app
+          commit: $(params.git-commit)
+          repository: $(params.repository-name)
+      spec:
+        pipelineRef:
+          name: app-pipeline
+        params:
+          - name: git-url
+            value: $(params.git-url)
+          - name: git-revision
+            value: $(params.git-revision)
+          - name: image-name
+            value: ghcr.io/your-org/your-repo
+          - name: image-tag
+            value: $(params.git-commit)
+          - name: registry-url
+            value: ghcr.io
+          - name: namespace
+            value: dev
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: go-cache
+            emptyDir: {}
+          - name: kaniko-cache
+            emptyDir: {}
+          - name: docker-hub-credentials
+            secret:
+              secretName: docker-credentials
+          - name: kubeconfig
+            secret:
+              secretName: kubeconfig-secret
+        timeout: 2h

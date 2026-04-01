@@ -1,0 +1,115 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: build-image
+  namespace: tekton-ci
+  labels:
+    app: cloudnative-app
+spec:
+  description: Build Docker image using Kaniko
+  params:
+    - name: image-name
+      type: string
+      description: Image name
+    - name: image-tag
+      type: string
+      default: latest
+      description: Image tag
+    - name: registry-url
+      type: string
+      default: ghcr.io
+      description: Container registry URL
+    - name: dockerfile
+      type: string
+      default: ./Dockerfile
+      description: Path to Dockerfile
+    - name: context
+      type: string
+      default: .
+      description: Build context path
+    - name: build-args
+      type: string
+      default: ''
+      description: Build arguments (JSON format)
+    - name: cache
+      type: string
+      default: 'true'
+      description: Enable Kaniko cache
+  workspaces:
+    - name: source
+      description: Source code workspace
+      mountPath: /workspace
+    - name: kaniko-cache
+      description: Kaniko cache directory
+      mountPath: /cache
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+      - name: DOCKER_CONFIG
+        value: /kaniko/.docker
+  steps:
+    - name: validate-dockerfile
+      image: alpine/curl:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        if [ ! -f $(workspaces.source.path)/$(params.dockerfile) ]; then
+          echo "Dockerfile not found at $(params.dockerfile)"
+          exit 1
+        fi
+
+        echo "Dockerfile validated"
+        cat $(workspaces.source.path)/$(params.dockerfile) | head -10
+
+    - name: build-image
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /secret/service-account.json
+        - name: DOCKER_CONFIG
+          value: /kaniko/.docker
+      script: |
+        #!/bin/sh
+        set -e
+
+        cd $(workspaces.source.path)
+
+        IMAGE=$(params.registry-url)/$(params.image-name):$(params.image-tag)
+        
+        echo "Building image: ${IMAGE}"
+
+        /kaniko/executor \
+          --context $(workspaces.source.path) \
+          --dockerfile $(workspaces.source.path)/$(params.dockerfile) \
+          --destination "${IMAGE}" \
+          --cache=$(params.cache) \
+          --cache-dir /cache \
+          --verbosity=debug
+
+        echo "Image built successfully: ${IMAGE}"
+
+    - name: extract-digest
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      script: |
+        #!/bin/sh
+        set -e
+
+        IMAGE=$(params.registry-url)/$(params.image-name):$(params.image-tag)
+        
+        # Get image digest
+        DIGEST=$(docker inspect "${IMAGE}" --format='{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2)
+        
+        if [ -z "${DIGEST}" ]; then
+          DIGEST=$(openssl dgst -sha256 $(workspaces.source.path)/$(params.dockerfile) | awk '{print $2}')
+        fi
+        
+        echo -n "${DIGEST}" > /tekton/results/image-digest
+        echo "Image digest: ${DIGEST}"
+
+  results:
+    - name: image-digest
+      description: Digest of the built image
+  timeout: 30m
+  retries: 2

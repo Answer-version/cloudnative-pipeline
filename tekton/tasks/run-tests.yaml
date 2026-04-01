@@ -1,0 +1,94 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: run-tests
+  namespace: tekton-ci
+  labels:
+    app: cloudnative-app
+spec:
+  description: Run unit tests with Go
+  params:
+    - name: test-command
+      type: string
+      default: go test -v ./...
+      description: Test command to execute
+    - name: coverage-threshold
+      type: string
+      default: '70'
+      description: Minimum coverage threshold percentage
+  workspaces:
+    - name: source
+      description: Source code workspace
+      mountPath: /workspace
+    - name: cache
+      description: Go module cache
+      mountPath: /go/pkg/mod
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+      - name: GOPATH
+        value: /go
+      - name: GOCACHE
+        value: /go/pkg/cache
+      - name: GOMODCACHE
+        value: /go/pkg/mod
+  steps:
+    - name: setup
+      image: golang:1.22-alpine
+      script: |
+        #!/bin/sh
+        set -e
+
+        cd $(workspaces.source.path)
+        
+        go version
+        go env GOPATH GOCACHE
+
+    - name: run-tests
+      image: golang:1.22-alpine
+      script: |
+        #!/bin/sh
+        set -e
+
+        cd $(workspaces.source.path)
+
+        echo "Running tests..."
+        go test -v -race -coverprofile=coverage.out ./...
+
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+        echo "Coverage: ${COVERAGE}%"
+
+        if [ -n "$(params.coverage-threshold)" ]; then
+          if [ "${COVERAGE}" -lt "$(params.coverage-threshold)" ]; then
+            echo "Coverage ${COVERAGE}% is below threshold $(params.coverage-threshold)%"
+            exit 1
+          fi
+        fi
+
+        # Save results
+        echo -n "${COVERAGE}" > /tekton/results/coverage
+        echo -n "passed" > /tekton/results/test-result
+
+    - name: upload-results
+      image: alpine:latest
+      script: |
+        #!/bin/sh
+        set -e
+
+        cd $(workspaces.source.path)
+
+        if [ -f coverage.out ]; then
+          echo "Coverage report available"
+          head -20 coverage.out
+        fi
+
+        echo "Test results: $(cat /tekton/results/test-result)"
+        echo "Coverage: $(cat /tekton/results/coverage)%"
+
+  results:
+    - name: test-result
+      description: Test result (passed/failed)
+    - name: coverage
+      description: Test coverage percentage
+  timeout: 20m

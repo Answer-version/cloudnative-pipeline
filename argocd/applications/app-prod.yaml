@@ -1,0 +1,93 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-prod
+  namespace: argocd
+  labels:
+    app: cloudnative-app
+    environment: production
+    tier: application
+  finalizers:
+    - resources.finalizer.argocd.argoproj.io
+  annotations:
+    notification.argocd.argoproj.io/trigger.on-successful-sync: |
+      - when: status.operationState.phase in ['Succeeded']
+        send: [prod-sync-success]
+    notification.argocd.argoproj.io/trigger.on-sync-failed: |
+      - when: status.operationState.phase in ['Error', 'Failed']
+        send: [prod-sync-failed]
+spec:
+  project: cloudnative-project
+  
+  source:
+    repoURL: https://github.com/your-org/gitops.git
+    targetRevision: main
+    path: gitops/apps/app/overlays/prod
+    kustomize:
+      images:
+        - ghcr.io/your-org/your-repo:$(IMAGE_TAG)
+      commonAnnotations:
+        environment: production
+        managed-by: argocd
+        compliance: pci-dss
+
+  destination:
+    server: https://kubernetes.prod-cluster.example.com
+    namespace: production
+
+  syncPolicy:
+    automated: null
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+      - Replace=false
+      - ServerSideApply=true
+      - Validate=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+    rollback:
+      limit: 5
+    ignoreDifferences:
+      - group: apps
+        kind: Deployment
+        jsonPointers:
+          - /spec/replicas
+          - /metadata/annotations
+      - group: ""
+        kind: ConfigMap
+        jsonPointers:
+          - /data
+    revisionHistoryLimit: 5
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /metadata/labels
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/replicas
+
+  info:
+    - name: Environment
+      value: production
+    - name: Team
+      value: platform-engineering
+    - name: Namespace
+      value: production
+    - name: SyncPolicy
+      value: manual
+    - name: Compliance
+      value: PCI-DSS compliant
+    - name: Backup
+      value: enabled
+    - name: Monitoring
+      value: datadog

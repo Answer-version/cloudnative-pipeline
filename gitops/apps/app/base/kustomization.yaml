@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: app-base
+  annotations:
+    app.kubernetes.io/name: cloudnative-app
+    app.kubernetes.io/part-of: cloudnative-platform
+    description: Base configuration for cloudnative-app
+
+commonLabels:
+  app: cloudnative-app
+  app.kubernetes.io/name: cloudnative-app
+  app.kubernetes.io/managed-by: kustomize
+
+namespace: default
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - hpa.yaml
+  - pdb.yaml
+
+images:
+  - name: ghcr.io/your-org/your-repo
+    newName: ghcr.io/your-org/your-repo
+    newTag: latest
+
+configMapGenerator:
+  - name: app-config
+    options:
+      disableNameSuffixHash: false
+    literals:
+      - APP_NAME=cloudnative-app
+      - APP_VERSION=1.0.0
+      - DEFAULT_LOG_LEVEL=info
+      - DEFAULT_TIMEOUT=30s
+
+generatorOptions:
+  disableNameSuffixHash: false
+  labels:
+    app.kubernetes.io/name: cloudnative-app
+    app.kubernetes.io/managed-by: kustomize
+
+vars:
+  - name: APP_NAME
+    objref:
+      kind: ConfigMap
+      name: app-config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.APP_NAME
+  - name: APP_VERSION
+    objref:
+      kind: ConfigMap
+      name: app-config
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.APP_VERSION
+
+configMapPrefixes:
+  - app-

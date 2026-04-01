@@ -1,0 +1,80 @@
+# AlertManager Slack 通知配置模板
+# 使用此模板配置 Slack 接收者
+
+receiver: slack-notifications
+slack_configs:
+  - channel: '#alerts'
+    send_resolved: true
+    api_url: <YOUR_SLACK_WEBHOOK_URL>
+    username: 'AlertManager Bot'
+    icon_emoji: ':warning:'
+    title: '{{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }} [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+    title_link: '{{ .ExternalURL }}'
+    pretext: '{{ if eq .Status "firing" }}*Alert Started!*{{ else }}*Alert Resolved*{{ end }}'
+    text: |
+      {{ range .Alerts }}
+      {{ if .Annotations.summary }}*Summary:* {{ .Annotations.summary }}{{ end }}
+      {{ if .Annotations.description }}*Description:* {{ .Annotations.description }}{{ end }}
+      *Severity:* {{ .Labels.severity }}
+      *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+      {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+      {{ if .Annotations.dashboard_url }}*Dashboard:* {{ .Annotations.dashboard_url }}{{ end }}
+      *Labels:*
+      {{ range .Labels.SortedPairs }}  • {{ .Name }}: {{ .Value }}
+      {{ end }}
+      {{ end }}
+
+    fields:
+      - title: 'Alert Name'
+        value: '{{ .GroupLabels.alertname }}'
+        short: true
+      - title: 'Status'
+        value: '{{ .Status | toUpper }}'
+        short: true
+
+    actions:
+      - type: 'button'
+        text: '📊 View Dashboard'
+        url: '{{ if .Annotations.dashboard_url }}{{ .Annotations.dashboard_url }}{{ else }}{{ .ExternalURL }}{{ end }}'
+        style: 'primary'
+      - type: 'button'
+        text: '📖 View Runbook'
+        url: '{{ .Annotations.runbook_url }}'
+        style: 'danger'
+      - type: 'button'
+        text: '🔔 View AlertManager'
+        url: '{{ .ExternalURL }}'
+
+    callbacks:
+      actions: |
+        {{ range .Alerts }}
+        {{ if .Annotations.action }}
+        *Action Required:* {{ .Annotations.action }}
+        {{ end }}
+        {{ end }}
+
+# Slack 紧急告警配置（critical 级别）
+- name: 'slack-critical'
+  slack_configs:
+    - channel: '#critical-alerts'
+      send_resolved: true
+      api_url: <YOUR_SLACK_WEBHOOK_URL>
+      username: 'AlertManager Bot'
+      icon_emoji: ':rotating_light:'
+      title: '🚨 CRITICAL ALERT: {{ .GroupLabels.alertname }}'
+      title_link: '{{ .ExternalURL }}'
+      pretext: '*IMMEDIATE ACTION REQUIRED*'
+      text: |
+        🚨 *CRITICAL*: {{ .GroupLabels.alertname }}
+
+        {{ range .Alerts }}
+        *{{ .Labels.alertname }}*
+        {{ .Annotations.summary }}
+        {{ .Annotations.description }}
+
+        *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+        {{ if .Annotations.runbook_url }}
+        *Runbook:* {{ .Annotations.runbook_url }}
+        {{ end }}
+        {{ end }}
+      color: '#dc3545'
