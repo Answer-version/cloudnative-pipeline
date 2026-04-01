@@ -1,62 +1,49 @@
 # ===================================================================
-# CloudNative Pipeline - 本地开发环境
+# CloudNative Pipeline - Docker Compose 单机版
 # ===================================================================
 # 启动命令: docker compose up -d
 # 停止命令: docker compose down
 # 查看日志: docker compose logs -f app
+#
+# 环境变量: 所有配置从 .env 文件读取（勿修改此文件）
 # ===================================================================
 
 services:
-  # ----------------------------------------------------------------
-  # 应用服务
-  # ----------------------------------------------------------------
+  # ------------------------------------------------------------------
+  # 应用服务 (Go)
+  # ------------------------------------------------------------------
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-      target: dev  # 使用开发阶段，支持热重载
+      target: dev
     container_name: cn-pipeline-app
     ports:
-      - "8080:8080"   # 应用端口
-      - "9090:9090"   # Prometheus metrics 端口
+      - "${APP_PORT:-8080}:8080"
+      - "9090:9090"
     environment:
-      # 数据库配置
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres123
-      - DB_NAME=cloudnative_pipeline
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
       - DB_SSLMODE=disable
-
-      # Redis 配置
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-redisStrongPass2026!}
-
-      # MinIO 配置 (S3 兼容对象存储)
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - S3_ENDPOINT=minio
-      - S3_PORT=9000
-      - S3_ACCESS_KEY=minioadmin
-      - S3_SECRET_KEY=minioadmin
-      - S3_BUCKET=pipeline-artifacts
+      - S3_PORT=${S3_PORT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - S3_BUCKET=${S3_BUCKET}
       - S3_REGION=us-east-1
-
-      # 应用配置
-      - APP_ENV=development
-      - APP_LOG_LEVEL=debug
-      - APP_PORT=8080
-
-      # Pipeline 配置
-      - PIPELINE_WORKERS=4
-      - PIPELINE_QUEUE_NAME=pipeline-tasks
+      - APP_ENV=${APP_ENV}
+      - APP_LOG_LEVEL=${APP_LOG_LEVEL}
+      - APP_PORT=${APP_PORT}
     volumes:
-      # 源码挂载（热重载）
       - ../cmd:/app/cmd:ro
       - ../internal:/app/internal:ro
       - ../pkg:/app/pkg:ro
-      # 配置挂载
-      - ./config.yaml:/app/config.yaml:ro
-      # Docker socket（用于构建镜像）
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
@@ -73,44 +60,43 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
-  # ----------------------------------------------------------------
+  # ------------------------------------------------------------------
   # PostgreSQL 数据库
-  # ----------------------------------------------------------------
+  # ------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     container_name: cn-pipeline-postgres
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres123
-      - POSTGRES_DB=cloudnative_pipeline
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - pipeline-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d cloudnative_pipeline"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
 
-  # ----------------------------------------------------------------
-  # Redis 缓存/消息队列
-  # ----------------------------------------------------------------
+  # ------------------------------------------------------------------
+  # Redis 缓存
+  # ------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: cn-pipeline-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}:6379"
     command: >
       redis-server
-      --requirepass ${REDIS_PASSWORD:-redisStrongPass2026!}
+      --requirepass ${REDIS_PASSWORD}
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --appendonly yes
@@ -120,58 +106,14 @@ services:
       - pipeline-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redisStrongPass2026!", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
 
-  # ----------------------------------------------------------------
-  # MinIO 对象存储
-  # ----------------------------------------------------------------
-  minio:
-    image: minio/minio:latest
-    container_name: cn-pipeline-minio
-    ports:
-      - "9000:9000"    # API 端口
-      - "9001:9001"    # Console 端口
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-    volumes:
-      - ./minio-data:/data
-    networks:
-      - pipeline-network
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 15s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  # ----------------------------------------------------------------
-  # MinIO Client (初始化 bucket)
-  # ----------------------------------------------------------------
-  minio-setup:
-    image: minio/mc:latest
-    container_name: cn-pipeline-minio-setup
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin;
-      mc mb local/pipeline-artifacts --ignore-existing;
-      mc anonymous set download local/pipeline-artifacts;
-      exit 0;
-      "
-    networks:
-      - pipeline-network
-
-  # ----------------------------------------------------------------
+  # ------------------------------------------------------------------
   # Prometheus 监控
-  # ----------------------------------------------------------------
+  # ------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v2.48.0
     container_name: cn-pipeline-prometheus
@@ -190,39 +132,85 @@ services:
       - pipeline-network
     restart: unless-stopped
 
-  # ----------------------------------------------------------------
-  # Jaeger 分布式追踪
-  # ----------------------------------------------------------------
-  jaeger:
-    image: jaegertracing/all-in-one:1.52
-    container_name: cn-pipeline-jaeger
+  # ------------------------------------------------------------------
+  # Grafana 可视化仪表盘
+  # ------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11
+    container_name: cn-pipeline-grafana
     ports:
-      - "16686:16686"  # UI
-      - "4317:4317"    # OTLP gRPC
-      - "4318:4318"    # OTLP HTTP
+      - "3000:3000"
     environment:
-      - COLLECTOR_OTLP_ENABLED=true
-      - SPAN_STORAGE_TYPE=memory
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
     networks:
       - pipeline-network
     restart: unless-stopped
 
-  # ----------------------------------------------------------------
-  # Nginx 反向代理 (API Gateway)
-  # ----------------------------------------------------------------
-  nginx:
-    image: nginx:alpine
-    container_name: cn-pipeline-nginx
+  # ------------------------------------------------------------------
+  # Loki 日志聚合
+  # ------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3
+    container_name: cn-pipeline-loki
     ports:
-      - "80:80"
-      - "443:443"
+      - "3100:3100"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - app
+      - loki-data:/loki
+    command: -config.expand-env=true
     networks:
       - pipeline-network
     restart: unless-stopped
+
+  # ------------------------------------------------------------------
+  # MinIO 对象存储
+  # ------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: cn-pipeline-minio
+    ports:
+      - "${S3_PORT}:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    networks:
+      - pipeline-network
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+
+  # ------------------------------------------------------------------
+  # MinIO Client (初始化 Bucket)
+  # ------------------------------------------------------------------
+  minio-setup:
+    image: minio/mc:latest
+    container_name: cn-pipeline-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY};
+      mc mb local/${S3_BUCKET} --ignore-existing;
+      mc anonymous set download local/${S3_BUCKET};
+      exit 0;
+      "
+    networks:
+      - pipeline-network
 
 # ===================================================================
 # 网络定义
@@ -244,3 +232,7 @@ volumes:
     name: cn-pipeline-minio-data
   prometheus-data:
     name: cn-pipeline-prometheus-data
+  grafana-data:
+    name: cn-pipeline-grafana-data
+  loki-data:
+    name: cn-pipeline-loki-data
