@@ -1,0 +1,19 @@
+# ===================================================================
+# CloudNative Pipeline - PodDisruptionBudget
+# ===================================================================
+# 用途: 确保在集群更新或节点维护时，最小可用 Pod 数量
+# 策略: 保持至少 2 个 Pod 可用，确保服务不中断
+# ===================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cloudnative-pipeline-pdb
+  namespace: pipeline
+  labels:
+    app: cloudnative-pipeline
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: cloudnative-pipeline

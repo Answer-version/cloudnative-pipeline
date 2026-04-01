@@ -31,7 +31,7 @@ services:
       # Redis 配置
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=redis123
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redisStrongPass2026!}
 
       # MinIO 配置 (S3 兼容对象存储)
       - S3_ENDPOINT=minio
@@ -110,7 +110,7 @@ services:
       - "6379:6379"
     command: >
       redis-server
-      --requirepass redis123
+      --requirepass ${REDIS_PASSWORD:-redisStrongPass2026!}
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --appendonly yes
@@ -120,7 +120,7 @@ services:
       - pipeline-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis123", "ping"]
+      test: ["CMD", "redis-cli", "-a", "redisStrongPass2026!", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -176,7 +176,7 @@ services:
     image: prom/prometheus:v2.48.0
     container_name: cn-pipeline-prometheus
     ports:
-      - "9091:9090"
+      - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus

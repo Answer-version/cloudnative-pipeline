@@ -13,6 +13,8 @@ spec:
   project: cloudnative-project
   
   source:
+    # TODO: 替换为你的 GitOps 仓库地址
+    # 例如: https://github.com/your-org/gitops.git
     repoURL: https://github.com/your-org/gitops.git
     targetRevision: main
     path: gitops/apps/app/overlays/dev

@@ -97,16 +97,13 @@ spec:
         set -e
 
         IMAGE=$(params.registry-url)/$(params.image-name):$(params.image-tag)
-        
-        # Get image digest
-        DIGEST=$(docker inspect "${IMAGE}" --format='{{index .RepoDigests 0}}' 2>/dev/null | cut -d'@' -f2)
-        
-        if [ -z "${DIGEST}" ]; then
-          DIGEST=$(openssl dgst -sha256 $(workspaces.source.path)/$(params.dockerfile) | awk '{print $2}')
-        fi
-        
-        echo -n "${DIGEST}" > /tekton/results/image-digest
-        echo "Image digest: ${DIGEST}"
+
+        # Kaniko doesn't have Docker daemon, use timestamp-based pseudo digest
+        BUILD_TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        IMAGE_DIGEST="${BUILD_TIMESTAMP}-$(params.image-tag)"
+
+        echo -n "${IMAGE_DIGEST}" > /tekton/results/image-digest
+        echo "Image digest (timestamp-based): ${IMAGE_DIGEST}"
 
   results:
     - name: image-digest

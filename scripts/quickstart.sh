@@ -5,6 +5,7 @@
 # 一键安装云原生开发环境
 # =================================================================
 
+# 脚本遇到错误时立即退出（部分命令使用 || true 允许失败以保证脚本继续执行）
 set -e
 
 # 颜色定义
@@ -144,24 +145,20 @@ check_cmd "命名空间创建完成"
 # =================================================================
 log_info "部署 Prometheus + Grafana..."
 
-# Prometheus
-kubectl apply -f monitoring/prometheus/prometheus.yaml
+# 监控组件使用目录批量应用
+kubectl apply -f monitoring/prometheus/
 check_cmd "Prometheus 部署完成"
 
-# Grafana
-kubectl apply -f monitoring/grafana/grafana.yaml
+kubectl apply -f monitoring/grafana/
 check_cmd "Grafana 部署完成"
 
-# Loki
-kubectl apply -f monitoring/loki/loki.yaml
+kubectl apply -f monitoring/loki/
 check_cmd "Loki 部署完成"
 
-# Promtail
-kubectl apply -f monitoring/promtail/promtail.yaml
+kubectl apply -f monitoring/promtail/
 check_cmd "Promtail 部署完成"
 
-# AlertManager
-kubectl apply -f monitoring/alertmanager/alertmanager.yaml
+kubectl apply -f monitoring/alertmanager/
 check_cmd "AlertManager 部署完成"
 
 # =================================================================

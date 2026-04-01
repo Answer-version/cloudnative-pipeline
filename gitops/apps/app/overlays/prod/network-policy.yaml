@@ -14,7 +14,9 @@ spec:
     - Egress
   ingress:
     - from:
-        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
       ports:
         - protocol: TCP
           port: 8080

@@ -106,4 +106,4 @@ data:
           severity: critical
         target_match:
           severity: warning
-        equal: ['alertname', 'namespace', 'pod']
+        equal: ['alertname', 'namespace', 'node']
