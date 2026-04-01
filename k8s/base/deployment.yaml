@@ -61,6 +61,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        prometheus.io/managed-by: "cloudnative-pipeline"
     spec:
       # ----------------------------------------------------------------
       # 亲和性配置
@@ -270,12 +271,12 @@ spec:
       # ----------------------------------------------------------------
       initContainers:
         - name: wait-for-db
-          image: busybox:1.36
+          image: postgres:16-alpine
           command:
             - sh
             - -c
             - |
-              until wget -q -O /dev/null http://postgres-headless.pipeline.svc.cluster.local:5432 2>/dev/null || exit 0; do
+              until pg_isready -h postgres-headless.pipeline.svc.cluster.local -p 5432 -U postgres; do
                 echo "Waiting for PostgreSQL..."
                 sleep 2
               done
@@ -303,8 +304,6 @@ spec:
       # ----------------------------------------------------------------
       dnsPolicy: ClusterFirst
       dnsConfig:
-        nameservers:
-          - 8.8.8.8
         searches:
           - pipeline.svc.cluster.local
           - svc.cluster.local
